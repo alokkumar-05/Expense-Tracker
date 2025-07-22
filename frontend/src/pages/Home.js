@@ -2,60 +2,136 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { APIUrl, handleError, handleSuccess } from '../utils';
 import { ToastContainer } from 'react-toastify';
+import ExpenseTable from './ExpenseTable';
+import ExpenseDetails from './ExpenseDetails';
+import ExpenseForm from './ExpenseForm';
 
 function Home() {
     const [loggedInUser, setLoggedInUser] = useState('');
-    const [products, setProducts] = useState('');
+    const [expenses, setExpenses] = useState([]); // Always start with an array
+    const [incomeAmt, setIncomeAmt] = useState(0);
+    const [expenseAmt, setExpenseAmt] = useState(0);
+
     const navigate = useNavigate();
+
     useEffect(() => {
-        setLoggedInUser(localStorage.getItem('loggedInUser'))
-    }, [])
+        setLoggedInUser(localStorage.getItem('loggedInUser'));
+    }, []);
 
     const handleLogout = (e) => {
         localStorage.removeItem('token');
         localStorage.removeItem('loggedInUser');
-        handleSuccess('User Loggedout');
+        handleSuccess('User Logged out');
         setTimeout(() => {
             navigate('/login');
-        }, 1000)
-    }
+        }, 1000);
+    };
 
-    const fetchProducts = async () => {
+    useEffect(() => {
+        // Defensive: Only map if expenses is an array
+        const amounts = (expenses ?? []).map(item => item.amount);
+        const income = amounts.filter(item => item > 0).reduce((acc, item) => acc + item, 0);
+        const exp = amounts.filter(item => item < 0).reduce((acc, item) => acc + item, 0) * -1;
+        setIncomeAmt(income);
+        setExpenseAmt(exp);
+    }, [expenses]);
+
+    const deleteExpens = async (id) => {
         try {
-            const url = `${APIUrl}/products`;
+            const url = `${APIUrl}/expenses/${id}`;
             const headers = {
                 headers: {
-                    'Authorization': localStorage.getItem('token')
-                }
-            }
+                    'Authorization': localStorage.getItem('token'),
+                },
+                method: "DELETE",
+            };
             const response = await fetch(url, headers);
+            if (response.status === 403) {
+                localStorage.removeItem('token');
+                navigate('/login');
+                return;
+            }
             const result = await response.json();
-            console.log(result);
-            setProducts(result);
+            handleSuccess(result?.message);
+            // Always set to an array, fallback if result.data is not an array
+            setExpenses(Array.isArray(result.data) ? result.data : []);
         } catch (err) {
             handleError(err);
         }
-    }
+    };
+
+    const fetchExpenses = async () => {
+        try {
+            const url = `${APIUrl}/expenses`;
+            const headers = {
+                headers: {
+                    'Authorization': localStorage.getItem('token'),
+                },
+            };
+            const response = await fetch(url, headers);
+            if (response.status === 403) {
+                localStorage.removeItem('token');
+                navigate('/login');
+                return;
+            }
+            const result = await response.json();
+            // Always set to an array, fallback if result.data is not an array
+            setExpenses(Array.isArray(result.data) ? result.data : []);
+        } catch (err) {
+            handleError(err);
+        }
+    };
+
+    const addTransaction = async (data) => {
+        try {
+            const url = `${APIUrl}/expenses`;
+            const headers = {
+                headers: {
+                    'Authorization': localStorage.getItem('token'),
+                    'Content-Type': 'application/json',
+                },
+                method: "POST",
+                body: JSON.stringify(data),
+            };
+            const response = await fetch(url, headers);
+            if (response.status === 403) {
+                localStorage.removeItem('token');
+                navigate('/login');
+                return;
+            }
+            const result = await response.json();
+            handleSuccess(result?.message);
+            // Always set to an array, fallback if result.data is not an array
+            setExpenses(Array.isArray(result.data) ? result.data : []);
+        } catch (err) {
+            handleError(err);
+        }
+    };
+
     useEffect(() => {
-        fetchProducts()
-    }, [])
+        fetchExpenses();
+    }, []);
 
     return (
         <div>
-            <h1>Welcome {loggedInUser}</h1>
-            <button onClick={handleLogout}>Logout</button>
-            <div>
-                {
-                    products && products?.map((item, index) => (
-                        <ul key={index}>
-                            <span>{item.name} : {item.price}</span>
-                        </ul>
-                    ))
-                }
+            <div className='user-section'>
+                <h1>Welcome {loggedInUser}</h1>
+                <button onClick={handleLogout}>Logout</button>
             </div>
+            <ExpenseDetails
+                incomeAmt={incomeAmt}
+                expenseAmt={expenseAmt}
+            />
+            <ExpenseForm
+                addTransaction={addTransaction}
+            />
+            <ExpenseTable
+                expenses={expenses ?? []} // Defensive: always pass an array
+                deleteExpens={deleteExpens}
+            />
             <ToastContainer />
         </div>
-    )
+    );
 }
 
-export default Home
+export default Home;
